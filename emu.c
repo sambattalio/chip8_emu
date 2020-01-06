@@ -15,9 +15,10 @@
 #define CHIP_W 64
 #define CHIP_H 32
 #define SPRITE_W 5
+#define FPS 120 // 60hz for timers so lets just do 60 fps
 
 // stack overflow thanks
-#define DEBUG 0
+#define DEBUG 1
 #define debug_print(fmt, ...) \
             do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
@@ -56,24 +57,24 @@ uint8_t font[16][SPRITE_W] = {
     {0xF0, 0x80, 0xF0, 0x80, 0x80}, // F
 };
 
-// maps 1 to 1 == 0xE = SDL_SCANCODE_E
-const SDL_Scancode keys[16] = {
-    SDL_SCANCODE_0,
-    SDL_SCANCODE_1,
-    SDL_SCANCODE_2,
-    SDL_SCANCODE_3,
-    SDL_SCANCODE_4,
-    SDL_SCANCODE_5,
-    SDL_SCANCODE_6,
-    SDL_SCANCODE_7,
-    SDL_SCANCODE_8,
-    SDL_SCANCODE_9,
-    SDL_SCANCODE_A,
-    SDL_SCANCODE_B,
-    SDL_SCANCODE_C,
-    SDL_SCANCODE_D,
-    SDL_SCANCODE_E,
-    SDL_SCANCODE_F
+// maps 1 to 1 w/ hex of key
+uint8_t keys[16] = {
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
 };
 
 proc* proc_create();
@@ -83,6 +84,9 @@ void proc_cycle(proc *p);
 void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture* texture);
 
 void read_word(proc* p);
+
+uint8_t sdl_to_hex(SDL_Keycode key);
+int64_t currentTimeMillis(); // stacokoverflow bb
 
 int main(int argc, char** argv) {
     if (argc != 2) {
@@ -114,22 +118,41 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    int quit = 0;
     SDL_Event event;
 
-    while (!quit) {
+    int64_t currFrame, lastFrame;
+    lastFrame = currentTimeMillis();
+    struct timespec to_sleep;
+
+    while (1) {
+        /* Regulate FPS */
+        currFrame = currentTimeMillis();
+        int64_t delta = currFrame - lastFrame;
+        lastFrame = currFrame;
+        if (delta < 1000/FPS) {
+            to_sleep.tv_sec = (1000/FPS - delta) / 1000;
+            to_sleep.tv_nsec = ((1000/FPS - delta) % 1000) * 1000 * 1000;
+            nanosleep(&to_sleep, NULL);
+        }
+
+        /* Handle quit or keypress */
+        SDL_PollEvent(&event);
+        if (event.type == SDL_QUIT) break;
+
+        if (event.type == SDL_KEYDOWN) {
+            uint8_t hex = sdl_to_hex(event.key.keysym.sym);
+            if (hex <= 0xF) keys[hex] = 1;
+        } else if (event.type == SDL_KEYUP) {
+            uint8_t hex = sdl_to_hex(event.key.keysym.sym);
+            if (hex <= 0xF) keys[hex] = 0;
+        }
+
+        /* Emulator work */
         proc_cycle(p);
         
         if (p->dirty_screen) {
             proc_render(p, renderer, texture);
             p->dirty_screen = !p->dirty_screen;
-        }
-
-        SDL_PollEvent(&event);
-        switch (event.type) {
-            case SDL_QUIT:
-                quit = 1;
-                break;
         }
     }
 
@@ -137,6 +160,45 @@ int main(int argc, char** argv) {
     SDL_Quit();
 
     return 0;
+}
+
+uint8_t sdl_to_hex(SDL_Keycode key) {
+    switch (key) {
+        case SDLK_0:
+            return 0x0;
+        case SDLK_1:
+            return 0x1;
+        case SDLK_2:
+            return 0x2;
+        case SDLK_3:
+            return 0x3;
+        case SDLK_4:
+            return 0x4;
+        case SDLK_5:
+            return 0x5;
+        case SDLK_6:
+            return 0x6;
+        case SDLK_7:
+            return 0x7;
+        case SDLK_8:
+            return 0x8;
+        case SDLK_9:
+            return 0x9;
+        case SDLK_a:
+            return 0xA;
+        case SDLK_b:
+            return 0xB;
+        case SDLK_c:
+            return 0xC;
+        case SDLK_d:
+            return 0xD;
+        case SDLK_e:
+            return 0xE;
+        case SDLK_f:
+            return 0xF;
+        default:
+            return 0x1F;
+    }
 }
 
 /* Create a chip8 processor... (mainly just sets PC) */
@@ -176,10 +238,10 @@ void proc_load_rom(proc *p, char* file_name) {
     fseek(f, 0L, SEEK_END);
     int size = ftell(f);
     // check if size too big
-    if (size > (MAX_PC - INIT_PC)) {
+    /*if (size > (MAX_PC - INIT_PC)) {
         printf("Error: Program too big!\n");
         exit(1);
-    }
+    }*/
     // Reset pointer
     fseek(f, 0L, SEEK_SET);
 
@@ -218,6 +280,12 @@ void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture *texture) {
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
+}
+
+int64_t currentTimeMillis() {
+    struct timeval time;
+    gettimeofday(&time, NULL);
+    return (int64_t)(time.tv_sec) * 1000 + (time.tv_usec / 1000);
 }
 
 /*
@@ -416,13 +484,11 @@ void read_word(proc* p) {
             p->dirty_screen = 1;
             break;
         case 0xE: {
-            // https://wiki.libsdl.org/SDL_GetKeyboardState
-            const Uint8 *state = SDL_GetKeyboardState(NULL);
             switch (kk) {
                 case 0x9E: 
                     /* SKP Vx: skip inst if key with value of Vx is pressed */
                     debug_print("SKP V%d\n", x);
-                    if (state[keys[p->registers[x]]]) {
+                    if (keys[p->registers[x]]) {
                         printf("pressed...\n");
                         bytes_ate = 4;
                     }
@@ -430,7 +496,7 @@ void read_word(proc* p) {
                 case 0xA1:
                     /* SKNP Vx: Skip next inst if key w/ value of Vx isn't pressed */
                     debug_print("SKNP V%d\n", x);
-                    if (!state[keys[p->registers[x]]]) {
+                    if (!keys[p->registers[x]]) {
                         bytes_ate = 4;
                     }
                     break;
@@ -451,17 +517,14 @@ void read_word(proc* p) {
                     /* LD Vx, K: wait for a key press, store the value of the key in Vx */
                     debug_print("LD V%d, K\n", x);
                     SDL_Event event;
-                    int keypressed = 0;
-                    while (!keypressed) {
+                    while (1) {
                         if(SDL_WaitEvent(&event)) {
                             if (event.type == SDL_KEYDOWN) {
                                 // check if a valid key (0-F)
-                                const Uint8 *state = SDL_GetKeyboardState(NULL);
-                                for (int i = 0; i < 16; i++) {
-                                    if (state[keys[i]]) {
-                                        keypressed = 1;
-                                        break;
-                                    } 
+                                uint8_t hex = sdl_to_hex(event.key.keysym.sym);
+                                if (hex <= 0xF) {
+                                    p->registers[x] = hex;
+                                    break;
                                 }
                             }
                         }
