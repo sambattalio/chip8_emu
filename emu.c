@@ -140,6 +140,7 @@ void read_word(proc* p) {
                 printf("RET\n");
                 p->pc = p->stack[p->sp];
                 p->sp -= 1;
+                bytes_ate = 0;
             } else {
                 /* SYS addr: jump to machine code routine @ nnn */
                 /* should just be ignored */
@@ -150,17 +151,19 @@ void read_word(proc* p) {
             /* JP addr: jump to 12 bit addr nnn */
             printf("JP %x\n", addr);
             p->pc = addr;
+            bytes_ate = 0;
 			break;
         case 0x2:
             /* CALL addr: call subroutine @ nnn */
             printf("CALL %x\n", addr);
             p->sp += 1;
-            if (p->sp > STACK_SIZE) {
+            if (p->sp >= STACK_SIZE) {
                 printf("Error: Too many nested function calls!\n");
                 exit(1);
             }
             p->stack[p->sp] = p->pc;
             p->pc = addr; 
+            bytes_ate = 0;
 			break;
         case 0x3:
             /* SE Vx, Byte: skip next inst if Vx == kk */
@@ -269,6 +272,7 @@ void read_word(proc* p) {
             /* JP V0, addr: jump to location nnn + V0 */
             printf("JP V0, %03x\n", addr);
             p->pc = p->registers[0] + addr;
+            bytes_ate = 0;
 			break;
         case 0xC:
             /* RND Vx, byte: set Vx = random byte & kk */
