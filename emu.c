@@ -214,7 +214,7 @@ proc* proc_create() {
     /* Load fontset into interpreter memory */
     for (int i = 0; i < 16; i++) {
         for (int j = 0; j < 5 /* num bytes per thing */; j++) {
-            p->memory[i + j] = font[i][j];
+            p->memory[i * 5 + j] = font[i][j];
         }
     }
 
