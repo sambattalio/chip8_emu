@@ -14,6 +14,12 @@
 #define SCREEN_H 320
 #define CHIP_W 64
 #define CHIP_H 32
+#define SPRITE_W 5
+
+// stack overflow thanks
+#define DEBUG 0
+#define debug_print(fmt, ...) \
+            do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
 
 const char* USAGE = "./emu ROM";
 
@@ -26,11 +32,12 @@ typedef struct proc {
     uint8_t sp; // points at topmost level of stack
     uint16_t stack[STACK_SIZE]; // 16 levels of nested subroutines
     uint8_t memory[4096]; // 4KB of ram
-    uint8_t graphics[CHIP_W * CHIP_H]; // 64x32 monochrome display
+    uint8_t graphics[CHIP_W * CHIP_H]; // 64x32 monochrome displai
+    uint8_t dirty_screen; // dirty bit to see if you should update screen texture
 } proc; 
 
 /* Fontset to be loaded into memory */
-uint8_t font[16][5] = {
+uint8_t font[16][SPRITE_W] = {
     {0xF0, 0x90, 0x90, 0x90, 0xF0}, // 0
     {0x20, 0x60, 0x20, 0x20, 0x70}, // 1
     {0xF0 ,0x10, 0xF0, 0x80, 0xF0}, // 2
@@ -47,6 +54,26 @@ uint8_t font[16][5] = {
     {0xE0, 0x90, 0x90, 0x90, 0xE0}, // D
     {0xF0, 0x80, 0xF0, 0x80, 0xF0}, // E
     {0xF0, 0x80, 0xF0, 0x80, 0x80}, // F
+};
+
+// maps 1 to 1 == 0xE = SDL_SCANCODE_E
+const SDL_Scancode keys[16] = {
+    SDL_SCANCODE_0,
+    SDL_SCANCODE_1,
+    SDL_SCANCODE_2,
+    SDL_SCANCODE_3,
+    SDL_SCANCODE_4,
+    SDL_SCANCODE_5,
+    SDL_SCANCODE_6,
+    SDL_SCANCODE_7,
+    SDL_SCANCODE_8,
+    SDL_SCANCODE_9,
+    SDL_SCANCODE_A,
+    SDL_SCANCODE_B,
+    SDL_SCANCODE_C,
+    SDL_SCANCODE_D,
+    SDL_SCANCODE_E,
+    SDL_SCANCODE_F
 };
 
 proc* proc_create();
@@ -92,7 +119,12 @@ int main(int argc, char** argv) {
 
     while (!quit) {
         proc_cycle(p);
-        proc_render(p, renderer, texture);
+        
+        if (p->dirty_screen) {
+            proc_render(p, renderer, texture);
+            p->dirty_screen = !p->dirty_screen;
+        }
+
         SDL_PollEvent(&event);
         switch (event.type) {
             case SDL_QUIT:
@@ -167,6 +199,9 @@ void proc_cycle(proc *p) {
     // clock cycle action
     // todo.... figure out 60hz cycling
     read_word(p);
+    // update timers
+    if (p->delay_timer) p->delay_timer--;
+    if (p->sound_timer) p->sound_timer--;
 }
 
 void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture *texture) {
@@ -174,10 +209,7 @@ void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture *texture) {
     memset(pixels,0, SCREEN_W * SCREEN_H * sizeof(uint32_t));
     for (int i = 0; i < SCREEN_H; i++) {
         for (int j = 0; j < SCREEN_W; j++) {
-            //printf("x: %d, y: %d -> %d\n", i , j, p->graphics[i/CHIP_W + j]);
             pixels[i*SCREEN_W + j] = p->graphics[(i/(SCREEN_H/CHIP_H))*64 + j/(SCREEN_W/CHIP_W)] ? 0xFFFFFFFF : 0;
-            if (pixels[i*SCREEN_W + j]) {
-            }
         }
     }
     
@@ -208,104 +240,99 @@ void read_word(proc* p) {
 
     int bytes_ate = 2; // instructions are 2 bytes... but sometimes you want to skip a line
 
-    if (cmd == 0x00EE || cmd == 0xEE00) {
-        printf("HERE\n\n");
-    }
-
-
     switch (l_opcode) {
         case 0x0:
             /* Could be 0nnn, 00E0, or 00EE */
             if (kk == 0x0E) {
                 /* CLS: clear display */
-                //printf("CLS\n");
+                debug_print("CLS\n", NULL);
                 memset(p->graphics, 0, CHIP_W * CHIP_H);
             } else if (kk == 0xEE) {
                 /* RET: return from subroutine */
-                //printf("RET\n");
+                debug_print("RET\n", NULL);
                 p->pc = p->stack[p->sp];
                 p->sp -= 1;
                 bytes_ate = 0;
             } else {
                 /* SYS addr: jump to machine code routine @ nnn */
                 /* should just be ignored */
-                printf("\n\n%04x: %04x\n\n", cmd, *word);
+                //printf("\n\n%04x: %04x\n\n", cmd, *word);
             }
 			break;
         case 0x1:
             /* JP addr: jump to 12 bit addr nnn */
-            //printf("JP %x\n", addr);
+            debug_print("JP %x\n", addr);
             p->pc = addr;
             bytes_ate = 0;
 			break;
         case 0x2:
             /* CALL addr: call subroutine @ nnn */
-            //printf("CALL %x\n", addr);
+            debug_print("CALL %x\n", addr);
             p->sp += 1;
             if (p->sp >= STACK_SIZE) {
                 printf("Error: Too many nested function calls!\n");
                 exit(1);
             }
-            p->stack[p->sp] = p->pc;
+            p->stack[p->sp] = p->pc + 2; // next instrution
             p->pc = addr; 
             bytes_ate = 0;
 			break;
         case 0x3:
             /* SE Vx, Byte: skip next inst if Vx == kk */
-            //printf("SE V%d, %02x\n", x, kk);
+            debug_print("SE V%d, %02x\n", x, kk);
             if (p->registers[x] == kk) {
                 bytes_ate = 4;
             }
 			break;
         case 0x4:
             /* SNE Vx, byte: Skip next inst if Vx != kk */
-            //printf("SNE V%d, %02x\n", x, kk);
+            debug_print("SNE V%d, %02x\n", x, kk);
             if (p->registers[x] != kk) {
                 bytes_ate = 4;
             }
 			break;
         case 0x5:
             /* SE Vx, Vy: Skip next inst if Vx = Vy */
-            //printf("SE V%d, V%d\n", x, y);
+            debug_print("SE V%d, V%d\n", x, y);
             if (p->registers[x] == p->registers[y]) {
                 bytes_ate = 4;
             }
 			break;
         case 0x6:
             /* LD Vx, byte: set Vx = byte */
-            //printf("LD V%d, %02x\n", x, kk);
+            debug_print("LD V%d, %02x\n", x, kk);
             p->registers[x] = kk;
 			break;
         case 0x7:
             /* ADD Vx, byte: set Vx = Vx + byte */
-            //printf("ADD V%d, %02x\n", x, kk);
+            debug_print("ADD V%d, %02x\n", x, kk);
             p->registers[x] = p->registers[x] + kk;
 			break;
         case 0x8:
             switch (r_opcode) {
                 case 0x0:
                     /* LD Vx, Vy: store Vy -> Vx */
-                    //printf("LD V%d, V%d\n", x, y);
+                    debug_print("LD V%d, V%d\n", x, y);
                     p->registers[x] = p->registers[y];
                     break;
                 case 0x1:
                     /* OR Vx, Vy: set Vx = Vx OR Vy */
-                    //printf("OR V%d, V%d\n", x, y);
+                    debug_print("OR V%d, V%d\n", x, y);
                     p->registers[x] = p->registers[x] | p->registers[y]; 
                     break;
                 case 0x2:
                     /* AND Vx, Vy: set Vx = Vx AND Vy */
-                    //printf("AND V%d, V%d\n", x, y);
+                    debug_print("AND V%d, V%d\n", x, y);
                     p->registers[x] = p->registers[x] & p->registers[y];
                     break;
                 case 0x3:
                     /* XOR Vx, Vy: set Vx = Vx XOR Vy */
-                    //printf("XOR V%d, V%d\n", x, y);
+                    debug_print("XOR V%d, V%d\n", x, y);
                     p->registers[x] = p->registers[x] ^ p->registers[y];
                     break;
                 case 0x4:
                     /* ADD Vx, Vy: set Vx = Vx + Vy... setting VF = Carry */
-                    //printf("ADD V%d, V%d\n", x, y);
+                    debug_print("ADD V%d, V%d\n", x, y);
                     p->registers[x] = p->registers[x] + p->registers[y];
                     if (((int) p->registers[x] + (int) p->registers[y]) > 255) {
                         p->registers[0xF] = 1;
@@ -315,25 +342,25 @@ void read_word(proc* p) {
                     break;
                 case 0x5:
                     /* SUB Vx, Vy: set Vx = Vx - Vy, set Vf = (Vx > Vy) */
-                    //printf("SUB V%d, V%d\n", x, y);
+                    debug_print("SUB V%d, V%d\n", x, y);
                     p->registers[x] = p->registers[x] - p->registers[y];
                     p->registers[0xF] = (p->registers[x] > p->registers[y]);
                     break;
                 case 0x6:
                     /* SHR Vx, {, Vy}: set Vx = Vx SHR 1, Vf = (LSB Vx == 1) */
-                    //printf("SHR V%d, {, V%d}\n", x, y);
+                    debug_print("SHR V%d, {, V%d}\n", x, y);
                     p->registers[0xF] = p->registers[x] & 1;
                     p->registers[x] = p->registers[x] >> 1;
                     break;
                 case 0x7:
                     /* SUBN Vx, Vy: set Vx = Vy - Vx, set Fv = (Vy > Vx) */
-                    //printf("SUBN V%d, V%d\n", x, y);
+                    debug_print("SUBN V%d, V%d\n", x, y);
                     p->registers[0xF] = p->registers[y] > p->registers[x];
                     p->registers[x] = p->registers[y] - p->registers[x];
                     break;
                 case 0xE:
                     /* SHL Vx, {, Vy}: set Vx = Vx SHL 1, , Vf = (MSB Vx == 1)  */
-                    //printf("SHL V%d, {, V%d}\n", x, y);
+                    debug_print("SHL V%d, {, V%d}\n", x, y);
                     p->registers[0xF] = p->registers[x] & 128; // Grab the MSB
                     p->registers[x] = p->registers[x] << 1;
                     break;
@@ -343,30 +370,30 @@ void read_word(proc* p) {
 			break;
         case 0x9:
             /* SNE Vx, VyL skip next inst if Vx != Vy */
-            //printf("SNE V%d, V%d\n", x, y);
+            debug_print("SNE V%d, V%d\n", x, y);
             if (p->registers[x] != p->registers[y]) {
                 bytes_ate = 4;
             }
 			break;
         case 0xA:
             /* LD I, addr: set I = nnn */
-            //printf("LD I, %03x\n", addr);
+            debug_print("LD I, %03x\n", addr);
             p->I = addr;
 			break;
         case 0xB:
             /* JP V0, addr: jump to location nnn + V0 */
-            //printf("JP V0, %03x\n", addr);
+            debug_print("JP V0, %03x\n", addr);
             p->pc = p->registers[0] + addr;
             bytes_ate = 0;
 			break;
         case 0xC:
             /* RND Vx, byte: set Vx = random byte & kk */
-            //printf("RND V%d, %02x\n", x, kk);
+            debug_print("RND V%d, %02x\n", x, kk);
             p->registers[x] = kk & (rand() % 255);
 			break;
         case 0xD:
             /* DRW Vx, Vy, Nibble: Display n byte sprite starting at mem location I @ (Vx, Vy), set VF = collision */
-            //printf("DRW V%d, V%d, %01x: %04x\n", x, y, r_opcode, cmd);
+            debug_print("DRW V%d, V%d, %01x: %04x\n", x, y, r_opcode, cmd);
             // default VF to 0 (no collision)
             p->registers[0xF] = 0;
             for (int i = 0; i < r_opcode; i++) { // r_opcode is height in this instruction
@@ -385,65 +412,99 @@ void read_word(proc* p) {
                     }
                 }
             }
+
+            p->dirty_screen = 1;
             break;
-        case 0xE:
+        case 0xE: {
+            // https://wiki.libsdl.org/SDL_GetKeyboardState
+            const Uint8 *state = SDL_GetKeyboardState(NULL);
             switch (kk) {
-                case 0x9E:
+                case 0x9E: 
                     /* SKP Vx: skip inst if key with value of Vx is pressed */
-                    //printf("SKP V%d\n", x);
+                    debug_print("SKP V%d\n", x);
+                    if (state[keys[p->registers[x]]]) {
+                        printf("pressed...\n");
+                        bytes_ate = 4;
+                    }
                     break;
                 case 0xA1:
                     /* SKNP Vx: Skip next inst if key w/ value of Vx isn't pressed */
-                    //printf("SKNP V%d\n", x);
+                    debug_print("SKNP V%d\n", x);
+                    if (!state[keys[p->registers[x]]]) {
+                        bytes_ate = 4;
+                    }
                     break;
                 default:
-                    printf("err!\n");
+                    printf("err: %04x\n", cmd);
             }
 			break;
+        }
         case 0xF:
             switch (kk) {
                 case 0x07:
                     /* LD Vx, DT: set Vx = delay timer value */
-                    //printf("LD V%d, DT\n", x);
+                    debug_print("LD V%d, DT\n", x);
                     p->registers[x] = p->delay_timer;
                     break;
                 case 0x0A:
+                {
                     /* LD Vx, K: wait for a key press, store the value of the key in Vx */
-                    //printf("LD V%d, K\n", x);
+                    debug_print("LD V%d, K\n", x);
+                    SDL_Event event;
+                    int keypressed = 0;
+                    while (!keypressed) {
+                        if(SDL_WaitEvent(&event)) {
+                            if (event.type == SDL_KEYDOWN) {
+                                // check if a valid key (0-F)
+                                const Uint8 *state = SDL_GetKeyboardState(NULL);
+                                for (int i = 0; i < 16; i++) {
+                                    if (state[keys[i]]) {
+                                        keypressed = 1;
+                                        break;
+                                    } 
+                                }
+                            }
+                        }
+                    }
                     break;
+                }
                 case 0x15:
                     /* LD DT, Vx: Set delay timer = Vx */
-                    //printf("LD DT, V%d\n", x);
+                    debug_print("LD DT, V%d\n", x);
                     p->delay_timer = p->registers[x];
                     break;
                 case 0x18:
                     /* LD ST, Vx: Set sound timer = Vx */
-                    //printf("LD ST, V%d\n", x);
+                    debug_print("LD ST, V%d\n", x);
                     p->sound_timer = p->registers[x];
                     break;
                 case 0x1E:
                     /* ADD I, Vx: Set I = I + Vx */
-                    //printf("LD I, V%d\n", x);
+                    debug_print("LD I, V%d\n", x);
                     p->I = p->I + p->registers[x];
                     break;
                 case 0x29:
                     /* LD F, Vx: set I = location of sprite for digit Vx */
-                    //printf("LD F, V%d\n", x);
+                    debug_print("LD F, V%d\n", x);
+                    p->I = p->registers[x] * SPRITE_W; // 5 is size of the sprite 
                     break;
                 case 0x33:
                     /* LD B, Vx: Store BCD rep of Vx in memory locations I, I+1, I+2 */
-                    //printf("LD B, V%d\n", x);
+                    debug_print("LD B, V%d\n", x);
+                    p->memory[p->I] = p->registers[x] / 100; // 100s
+                    p->memory[p->I + 1] = (p->registers[x] / 10) % 10; // 10s?
+                    p->memory[p->I + 2] = p->registers[x] % 10; // 1s
                     break;
                 case 0x55:
                     /* LD [I], Vx: Store registers V0 through Vx in memory starting at location I */
-                    //printf("LD [I], V%d\n", x);
+                    debug_print("LD [I], V%d\n", x);
                     for (int i = 0; i < x; i++) {
                         p->memory[p->I+i] = p->registers[i];
                     }
                     break;
                 case 0x65:
                     /* LD Vx, [I]: Read registers V0 through Vx from memory starting @ location I */
-                    //printf("LD V%d, [I]\n", x);
+                    debug_print("LD V%d, [I]\n", x);
                     for (int i = 0; i < x; i++) {
                         p->registers[i] = p->memory[p->I + i]; 
                     }
