@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include "SDL2/SDL.h"
 
 #define NIBBLE 4
 #define INIT_PC 0x200
@@ -42,6 +43,18 @@ int main(int argc, char** argv) {
     proc *p = proc_create();
 
     proc_load_rom(p, argv[1]);
+
+    if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
+        printf("Error: SDL having issues starting.\n");
+        exit(1);
+    }
+
+    SDL_Window* screen = SDL_CreateWindow("Chad-8: Chip8 emulator", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 512, 256, SDL_WINDOW_SHOWN);
+
+    if (!screen) {
+        printf("Error: SDL couldn't create window!\n");
+        exit(1);
+    }
 
     while (1) {
         proc_cycle(p);
