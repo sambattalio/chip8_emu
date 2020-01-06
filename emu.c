@@ -241,7 +241,7 @@ void proc_load_rom(proc *p, char* file_name) {
     /*if (size > (MAX_PC - INIT_PC)) {
         printf("Error: Program too big!\n");
         exit(1);
-    }*/
+    } */
     // Reset pointer
     fseek(f, 0L, SEEK_SET);
 
@@ -411,8 +411,8 @@ void read_word(proc* p) {
                 case 0x5:
                     /* SUB Vx, Vy: set Vx = Vx - Vy, set Vf = (Vx > Vy) */
                     debug_print("SUB V%d, V%d\n", x, y);
-                    p->registers[x] = p->registers[x] - p->registers[y];
                     p->registers[0xF] = (p->registers[x] > p->registers[y]);
+                    p->registers[x] = p->registers[x] - p->registers[y];
                     break;
                 case 0x6:
                     /* SHR Vx, {, Vy}: set Vx = Vx SHR 1, Vf = (LSB Vx == 1) */
