@@ -383,7 +383,6 @@ void proc_cycle(proc *p) {
 
 void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture *texture) {
     uint32_t pixels[SCREEN_W * SCREEN_H];
-    memset(pixels,0, SCREEN_W * SCREEN_H * sizeof(uint32_t));
     for (int i = 0; i < SCREEN_H; i++) {
         for (int j = 0; j < SCREEN_W; j++) {
             pixels[i*SCREEN_W + j] = p->graphics[(i/(SCREEN_H/CHIP_H))*64 + j/(SCREEN_W/CHIP_W)] ? 0xFFFFFFFF : 0;
@@ -391,7 +390,7 @@ void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture *texture) {
     }
     
     SDL_UpdateTexture(texture, NULL, pixels, SCREEN_W * sizeof(Uint32));
+    SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
-    SDL_RenderClear(renderer);
 }

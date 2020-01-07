@@ -16,7 +16,7 @@
 #define CHIP_W 64
 #define CHIP_H 32
 #define SPRITE_W 5
-#define FPS 120 // 60hz for timers so lets just do 60 fps
+#define FPS 180 // 60hz for timers so lets just do 60 fps
 
 typedef struct proc {
     uint16_t I; // cool 16 bit register for some ops and storing addresses
