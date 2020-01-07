@@ -54,7 +54,7 @@ void proc_read_word(proc* p) {
                 debug_print("RET\n", NULL);
                 p->pc = p->stack[p->sp];
                 p->sp -= 1;
-                bytes_ate = 0;
+                // bytes_ate = 0;
             } else {
                 /* SYS addr: jump to machine code routine @ nnn */
                 /* should just be ignored */
@@ -75,7 +75,7 @@ void proc_read_word(proc* p) {
                 printf("Error: Too many nested function calls!\n");
                 exit(1);
             }
-            p->stack[p->sp] = p->pc + 2; // next instrution
+            p->stack[p->sp] = p->pc;
             p->pc = addr; 
             bytes_ate = 0;
 			break;
@@ -135,12 +135,12 @@ void proc_read_word(proc* p) {
                 case 0x4:
                     /* ADD Vx, Vy: set Vx = Vx + Vy... setting VF = Carry */
                     debug_print("ADD V%d, V%d\n", x, y);
-                    p->registers[x] = p->registers[x] + p->registers[y];
                     if (((int) p->registers[x] + (int) p->registers[y]) > 255) {
                         p->registers[0xF] = 1;
                     } else {
-                       p->registers[0xF] = 0; 
+                        p->registers[0xF] = 0; 
                     }
+                    p->registers[x] = p->registers[x] + p->registers[y];
                     break;
                 case 0x5:
                     /* SUB Vx, Vy: set Vx = Vx - Vy, set Vf = (Vx > Vy) */
@@ -186,7 +186,7 @@ void proc_read_word(proc* p) {
             /* JP V0, addr: jump to location nnn + V0 */
             debug_print("JP V0, %03x\n", addr);
             p->pc = p->registers[0] + addr;
-            bytes_ate = 0;
+            //bytes_ate = 0; TODO LOOK AND SEE
 			break;
         case 0xC:
             /* RND Vx, byte: set Vx = random byte & kk */
@@ -223,7 +223,6 @@ void proc_read_word(proc* p) {
                     /* SKP Vx: skip inst if key with value of Vx is pressed */
                     debug_print("SKP V%d\n", x);
                     if (keys[p->registers[x]]) {
-                        printf("pressed...\n");
                         bytes_ate = 4;
                     }
                     break;
