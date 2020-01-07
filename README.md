@@ -7,9 +7,8 @@ Cowgod's Chip-8 Technical Reference: http://devernay.free.fr/hacks/chip8/C8TECH1
 
 ## Status
 
-Currently *sorta* works.
+Works for the most part. I think i borked fonts though.
 
-It can play some roms, but not others.
 
 I think one (or more) of my instruction handlers have a small bug in them propogating out beecause of that.
 
