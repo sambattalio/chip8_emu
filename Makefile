@@ -9,8 +9,11 @@ TARGET = emu
 
 all: $(TARGET)
 
-$(TARGET): $(TARGET).c
-	$(CC) $(CFLAGS) -o $(TARGET) $(TARGET).c $(LIB) 
+$(TARGET): emu.o helpers.o proc.o
+	$(CC) $(CFLAGS) $^ -o $@ $(LIB) 
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@ -g
 
 clean:
-	rm $(TARGET)
+	rm $(TARGET) *.o
