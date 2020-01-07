@@ -32,7 +32,6 @@ void proc_read_word(proc* p) {
     unsigned char *word = &p->memory[p->pc]; // get bytes @ the data words spot
     /* Helper variables from command */
     unsigned int cmd      = p->memory[p->pc] << 8 | p->memory[p->pc + 1]; //*word & 0xFFFF;
-    //cmd = (cmd >> 8) | (cmd << 8); // thanks stack overflow
     unsigned int r_opcode = cmd & 0x000F;
     unsigned int l_opcode = (cmd & 0xF000) >> (3 * NIBBLE);
     unsigned int addr     = (cmd & 0x0FFF); // lowest 12 bits of instruction
@@ -46,11 +45,11 @@ void proc_read_word(proc* p) {
     switch (l_opcode) {
         case 0x0:
             /* Could be 0nnn, 00E0, or 00EE */
-            if (kk == 0x0E) {
+            if (addr == 0x0E0) {
                 /* CLS: clear display */
                 debug_print("CLS\n", NULL);
                 memset(p->graphics, 0, CHIP_W * CHIP_H);
-            } else if (kk == 0xEE) {
+            } else if (addr == 0x0EE) {
                 /* RET: return from subroutine */
                 debug_print("RET\n", NULL);
                 p->pc = p->stack[p->sp];
@@ -393,8 +392,7 @@ void proc_render(proc *p, SDL_Renderer* renderer, SDL_Texture *texture) {
     }
     
     SDL_UpdateTexture(texture, NULL, pixels, SCREEN_W * sizeof(Uint32));
-
-    SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
+    SDL_RenderClear(renderer);
 }
